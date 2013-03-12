@@ -1,5 +1,5 @@
 CACHE MANIFEST
-# V1.01
+# V1.02
 NETWORK:
 *
 CACHE:
@@ -10,6 +10,7 @@ createjs/tweenjs-0.3.0.min.js
 data/AllyDB.js
 data/EnemyDB.js
 data/LevelDB.js
+images/favicon.png
 images/fb-share.png
 images/allies/allies.png
 images/allies/laser_line.png
