@@ -966,10 +966,10 @@ co.doubleduck.BaseAssets = $hxClasses["co.doubleduck.BaseAssets"] = function() {
 co.doubleduck.BaseAssets.__name__ = ["co","doubleduck","BaseAssets"];
 co.doubleduck.BaseAssets.loader = function() {
 	if(co.doubleduck.BaseAssets._loader == null) {
-		co.doubleduck.BaseAssets._loader = new createjs.PreloadJS();
-		co.doubleduck.BaseAssets._loader.initialize(true);
+		co.doubleduck.BaseAssets._loader = new createjs.LoadQueue(true);
+		co.doubleduck.BaseAssets._loader.installPlugin(createjs.LoadQueue.SOUND);
 		co.doubleduck.BaseAssets._loader.onFileLoad = co.doubleduck.BaseAssets.handleFileLoaded;
-		co.doubleduck.BaseAssets._loader.onFileError = co.doubleduck.BaseAssets.handleLoadError;
+		co.doubleduck.BaseAssets._loader.onError = co.doubleduck.BaseAssets.handleLoadError;
 		co.doubleduck.BaseAssets._loader.setMaxConnections(10);
 	}
 	return co.doubleduck.BaseAssets._loader;
@@ -978,17 +978,15 @@ co.doubleduck.BaseAssets.loadAndCall = function(uri,callbackFunc) {
 	co.doubleduck.BaseAssets.loader().loadFile(uri);
 	co.doubleduck.BaseAssets._loadCallbacks[uri] = callbackFunc;
 }
-co.doubleduck.BaseAssets.addSounds = function(sounds) {
+co.doubleduck.BaseAssets.finishLoading = function(manifest,sounds) {
 	if(co.doubleduck.SoundManager.available) {
 		var _g1 = 0, _g = sounds.length;
 		while(_g1 < _g) {
-			var mySound = _g1++;
-			co.doubleduck.SoundManager.initSound(sounds[mySound]);
+			var currSound = _g1++;
+			manifest.push(sounds[currSound] + co.doubleduck.SoundManager.EXTENSION);
+			co.doubleduck.SoundManager.initSound(sounds[currSound]);
 		}
 	}
-}
-co.doubleduck.BaseAssets.finishLoading = function(manifest,sounds) {
-	co.doubleduck.BaseAssets.addSounds(sounds);
 	if(co.doubleduck.BaseAssets._useLocalStorage) co.doubleduck.BaseAssets.loadFromLocalStorage(manifest);
 	if(manifest.length == 0) {
 		if(co.doubleduck.BaseAssets.onLoadAll != null) co.doubleduck.BaseAssets.onLoadAll();
@@ -1004,15 +1002,15 @@ co.doubleduck.BaseAssets.loadAll = function(manifest,sounds) {
 	manifest[manifest.length] = "images/duckling/page_marker.png";
 }
 co.doubleduck.BaseAssets.audioLoaded = function(event) {
-	co.doubleduck.BaseAssets._cacheData[event.src] = event;
+	co.doubleduck.BaseAssets._cacheData[event.item.src] = event;
 }
 co.doubleduck.BaseAssets.manifestFileLoad = function(event) {
 	if(co.doubleduck.BaseAssets._useLocalStorage && event != null) {
 		var utils = new ddjsutils();
 		try {
-			var fileName = event.src;
+			var fileName = event.item.src;
 			if(HxOverrides.substr(fileName,fileName.length - 3,null) == "jpg") return;
-			co.doubleduck.BasePersistence.setValue(event.src,utils.getBase64Image(event.result));
+			co.doubleduck.BasePersistence.setValue(event.item.src,utils.getBase64Image(event.result));
 		} catch( err ) {
 		}
 	}
@@ -1047,8 +1045,8 @@ co.doubleduck.BaseAssets.handleLoadError = function(event) {
 }
 co.doubleduck.BaseAssets.handleFileLoaded = function(event) {
 	if(event != null) {
-		co.doubleduck.BaseAssets._cacheData[event.src] = event.result;
-		var callbackFunc = Reflect.field(co.doubleduck.BaseAssets._loadCallbacks,event.src);
+		co.doubleduck.BaseAssets._cacheData[event.item.src] = event.result;
+		var callbackFunc = Reflect.field(co.doubleduck.BaseAssets._loadCallbacks,event.item.src);
 		if(callbackFunc != null) callbackFunc();
 	}
 }
@@ -1056,7 +1054,7 @@ co.doubleduck.BaseAssets.getAsset = function(uri) {
 	var cache = Reflect.field(co.doubleduck.BaseAssets._cacheData,uri);
 	if(cache == null) {
 		if(co.doubleduck.BaseAssets.loader().getResult(uri) != null) {
-			cache = co.doubleduck.BaseAssets.loader().getResult(uri).result;
+			cache = co.doubleduck.BaseAssets.loader().getResult(uri);
 			co.doubleduck.BaseAssets._cacheData[uri] = cache;
 		}
 	}
@@ -1148,7 +1146,10 @@ co.doubleduck.Assets.loadAll = function() {
 	manifest.push("images/menu/button_sound.png");
 	manifest.push("images/menu/button_help.png");
 	manifest.push("images/menu/help_screen.png");
+	manifest.push("images/menu/help1.png");
+	manifest.push("images/menu/help2.png");
 	manifest.push("images/menu/button_got_it.png");
+	manifest.push("images/menu/next.png");
 	co.doubleduck.BaseAssets.finishLoading(manifest,sounds);
 }
 co.doubleduck.Assets.__super__ = co.doubleduck.BaseAssets;
@@ -1340,7 +1341,7 @@ co.doubleduck.BaseGame.prototype = {
 	}
 	,exitFocus: function() {
 		var hidden = document.mozHidden;
-		if(hidden) co.doubleduck.SoundManager.mute(); else if(!co.doubleduck.SoundManager.getPersistedMute()) co.doubleduck.SoundManager.unmute();
+		if(hidden) co.doubleduck.SoundManager.mute(false); else if(!co.doubleduck.SoundManager.getPersistedMute()) co.doubleduck.SoundManager.unmute(false);
 	}
 	,showSplash: function() {
 		if(viewporter.ACTIVE) js.Lib.document.body.bgColor = "#00A99D"; else js.Lib.document.body.bgColor = "#D94D00";
@@ -1453,6 +1454,32 @@ co.doubleduck.BasePersistence.initVar = function(initedVar,defaultVal) {
 		co.doubleduck.BasePersistence.available = false;
 	}
 }
+co.doubleduck.BasePersistence.getDynamicValue = function(key) {
+	if(!co.doubleduck.BasePersistence.available) return { };
+	var val = localStorage[co.doubleduck.BasePersistence.GAME_PREFIX + key];
+	return val;
+}
+co.doubleduck.BasePersistence.setDynamicValue = function(key,value) {
+	if(!co.doubleduck.BasePersistence.available) return;
+	localStorage[co.doubleduck.BasePersistence.GAME_PREFIX + key] = value;
+}
+co.doubleduck.BasePersistence.initDynamicVar = function(initedVar,defaultVal) {
+	var value = co.doubleduck.BasePersistence.getDynamicValue(initedVar);
+	if(value == null) try {
+		co.doubleduck.BasePersistence.setDynamicValue(initedVar,defaultVal);
+	} catch( e ) {
+		co.doubleduck.BasePersistence.available = false;
+	}
+}
+co.doubleduck.BasePersistence.printAll = function() {
+	var ls = localStorage;
+	var localStorageLength = ls.length;
+	var _g = 0;
+	while(_g < localStorageLength) {
+		var entry = _g++;
+		null;
+	}
+}
 co.doubleduck.BaseSession = $hxClasses["co.doubleduck.BaseSession"] = function() {
 	createjs.Container.call(this);
 };
@@ -1472,10 +1499,10 @@ co.doubleduck.BaseSession.prototype = $extend(createjs.Container.prototype,{
 			this.onSessionEnd();
 		}
 	}
-	,handleReplayClick: function() {
+	,handleReplayClick: function(properties) {
 		if(this.onRestart != null) {
 			createjs.Ticker.setPaused(false);
-			this.onRestart();
+			this.onRestart(properties);
 		}
 	}
 	,handleMenuClick: function() {
@@ -1521,12 +1548,13 @@ co.doubleduck.LabeledContainer.prototype = $extend(createjs.Container.prototype,
 		this._bitmap.y = this.image.height / 2;
 		this.addChild(this._bitmap);
 	}
-	,addBitmapLabel: function(label,fontType,padding) {
+	,addBitmapLabel: function(label,fontType,padding,centered) {
+		if(centered == null) centered = true;
 		if(padding == null) padding = 0;
 		if(fontType == null) fontType = "";
 		if(this._bitmapText != null) this.removeChild(this._bitmapText);
 		var fontHelper = new co.doubleduck.FontHelper(fontType);
-		this._bitmapText = fontHelper.getNumber(Std.parseInt(label),1,true,null,padding);
+		this._bitmapText = fontHelper.getNumber(Std.parseInt(label),1,true,null,padding,centered);
 		if(this.image != null) {
 			this._bitmapText.x = this.image.width / 2;
 			this._bitmapText.y = this.image.height / 2;
@@ -1546,6 +1574,17 @@ co.doubleduck.LabeledContainer.prototype = $extend(createjs.Container.prototype,
 	}
 	,setBitmapLabelX: function(lx) {
 		this._bitmapText.x = lx;
+	}
+	,getBitmapLabelWidth: function() {
+		var maxWidth = 0;
+		var _g1 = 0, _g = this._bitmapText.getNumChildren();
+		while(_g1 < _g) {
+			var digit = _g1++;
+			var currentDigit = js.Boot.__cast(this._bitmapText.getChildAt(digit) , createjs.Bitmap);
+			var endsAt = currentDigit.x + currentDigit.image.width;
+			if(endsAt > maxWidth) maxWidth = endsAt;
+		}
+		return maxWidth;
 	}
 	,setLabelY: function(ly) {
 		this._text.y = ly;
@@ -1580,6 +1619,7 @@ co.doubleduck.LabeledContainer.prototype = $extend(createjs.Container.prototype,
 co.doubleduck.Button = $hxClasses["co.doubleduck.Button"] = function(bmp,pauseAffected,clickType,clickSound) {
 	if(clickType == null) clickType = 2;
 	if(pauseAffected == null) pauseAffected = true;
+	this._lastClickTime = 0;
 	co.doubleduck.LabeledContainer.call(this,bmp);
 	if(clickSound == null && co.doubleduck.Button._defaultSound != null) this._clickSound = co.doubleduck.Button._defaultSound; else this._clickSound = clickSound;
 	this._bitmap.mouseEnabled = true;
@@ -1610,8 +1650,16 @@ co.doubleduck.Button.prototype = $extend(co.doubleduck.LabeledContainer.prototyp
 	,setToggle: function(flag) {
 		if(flag) this._states.gotoAndStop(0); else this._states.gotoAndStop(1);
 	}
-	,handleToggle: function() {
+	,handleToggle: function(e) {
 		if(this.onToggle == null) return;
+		if(this._lastClickPos == null) this._lastClickPos = new createjs.Point(0,0);
+		if((this._lastClickPos.x < e.stageX + 1 || this._lastClickPos.x > e.stageX + 1) && (this._lastClickPos.y < e.stageY + 1 || this._lastClickPos.y > e.stageY + 1)) {
+			var now = createjs.Ticker.getTime(true);
+			if(now < this._lastClickTime + 500) return;
+		}
+		this._lastClickPos.x = e.stageX;
+		this._lastClickPos.y = e.stageY;
+		this._lastClickTime = createjs.Ticker.getTime(true);
 		this._states.gotoAndStop(1 - this._states.currentFrame);
 		this.onToggle();
 	}
@@ -1666,6 +1714,8 @@ co.doubleduck.Button.prototype = $extend(co.doubleduck.LabeledContainer.prototyp
 	,setNoSound: function() {
 		this._clickSound = null;
 	}
+	,_lastClickPos: null
+	,_lastClickTime: null
 	,_clickSound: null
 	,_juiceTween: null
 	,_clickType: null
@@ -1933,7 +1983,8 @@ co.doubleduck.FontHelper = $hxClasses["co.doubleduck.FontHelper"] = function(typ
 };
 co.doubleduck.FontHelper.__name__ = ["co","doubleduck","FontHelper"];
 co.doubleduck.FontHelper.prototype = {
-	getNumber: function(num,scale,forceContainer,dims,padding) {
+	getNumber: function(num,scale,forceContainer,dims,padding,centered) {
+		if(centered == null) centered = true;
 		if(padding == null) padding = 0;
 		if(forceContainer == null) forceContainer = false;
 		if(scale == null) scale = 1;
@@ -1942,8 +1993,10 @@ co.doubleduck.FontHelper.prototype = {
 			var bmp = this.getDigit(num);
 			bmp.scaleX = bmp.scaleY = scale;
 			result.addChild(bmp);
-			result.regX = bmp.image.width / 2;
-			result.regY = bmp.image.height / 2;
+			if(centered) {
+				result.regX = bmp.image.width / 2;
+				result.regY = bmp.image.height / 2;
+			}
 			if(forceContainer) {
 				if(dims != null) {
 					dims.width = bmp.image.width;
@@ -1984,8 +2037,10 @@ co.doubleduck.FontHelper.prototype = {
 					totalWidth += this._lastComma.image.width * scale + padding;
 				}
 			}
-			result.regX = totalWidth / 2;
-			result.regY = digits[0].image.height / 2;
+			if(centered) {
+				result.regX = totalWidth / 2;
+				result.regY = digits[0].image.height / 2;
+			}
 			if(dims != null) {
 				dims.width = totalWidth;
 				dims.height = digits[0].image.height;
@@ -1998,7 +2053,7 @@ co.doubleduck.FontHelper.prototype = {
 		return digit1;
 	}
 	,getComma: function() {
-		return co.doubleduck.BaseAssets.getImage(this._fontType + ",.png");
+		return co.doubleduck.BaseAssets.getImage(this._fontType + "comma.png");
 	}
 	,_fontType: null
 	,_lastComma: null
@@ -2189,23 +2244,17 @@ co.doubleduck.Menu = $hxClasses["co.doubleduck.Menu"] = function() {
 		this._muteBtn.onToggle = $bind(this,this.handleMuteToggle);
 		this.addChild(this._muteBtn);
 	}
-	this._helpScreen = co.doubleduck.BaseAssets.getImage("images/menu/help_screen.png");
-	this._helpScreen.regX = this._helpScreen.image.width / 2;
-	this._helpScreen.regY = this._helpScreen.image.height / 2;
+	this._helpScreen = new co.doubleduck.PagedHelp("images/menu/help_screen.png","images/menu/next.png","images/menu/button_got_it.png",["images/menu/help1.png","images/menu/help2.png"]);
 	this._helpScreen.x = co.doubleduck.BaseGame.getViewport().width / 2;
 	this._helpScreen.y = co.doubleduck.BaseGame.getViewport().height * 0.475;
 	this._helpScreen.scaleX = this._helpScreen.scaleY = co.doubleduck.BaseGame.getScale();
+	this._helpScreen.setMarkersPos(5,0);
+	this._helpScreen.setButtonsPos(0.91,0.93);
+	this._helpScreen.changeContentMask(0,20,20,20);
+	this._helpScreen.onGotIt = $bind(this,this.closeHelp);
 	this.addChild(this._helpScreen);
 	this._helpScreen.alpha = 0;
 	this._helpScreen.visible = false;
-	this._closeHelp = new co.doubleduck.Button(co.doubleduck.BaseAssets.getImage("images/menu/button_got_it.png"),true,2,"sound/Button_click");
-	this._closeHelp.alpha = 0;
-	this._closeHelp.regX = this._closeHelp.image.width;
-	this._closeHelp.regY = this._closeHelp.image.height;
-	this._closeHelp.scaleX = this._closeHelp.scaleY = co.doubleduck.BaseGame.getScale();
-	this._closeHelp.x = this._helpScreen.x + this._helpScreen.image.width * co.doubleduck.BaseGame.getScale() * 0.53;
-	this._closeHelp.y = this._helpScreen.y + this._helpScreen.image.height * co.doubleduck.BaseGame.getScale() * 0.54;
-	this.addChild(this._closeHelp);
 	this.goToWorld(0,true);
 	this.setArrowBtnVisibility();
 	this._music = co.doubleduck.SoundManager.playMusic("sound/Menu_music");
@@ -2289,11 +2338,9 @@ co.doubleduck.Menu.prototype = $extend(co.doubleduck.BaseMenu.prototype,{
 		this._music.stop();
 	}
 	,closeHelp: function() {
-		createjs.Tween.removeTweens(this._closeHelp);
 		createjs.Tween.removeTweens(this._helpScreen);
 		createjs.Tween.removeTweens(this._helpBtn);
-		createjs.Tween.get(this._helpScreen).to({ alpha : 0},1000,createjs.Ease.sineOut);
-		this._closeHelp.alpha = 0;
+		createjs.Tween.get(this._helpScreen).to({ alpha : 0},400,createjs.Ease.sineOut);
 		this._helpBtn.onClick = $bind(this,this.showHelpMenu);
 		this._levelsLayer.mouseEnabled = true;
 		if(this._justViewedTutor) {
@@ -2305,12 +2352,11 @@ co.doubleduck.Menu.prototype = $extend(co.doubleduck.BaseMenu.prototype,{
 		}
 	}
 	,showHelpMenu: function() {
-		createjs.Tween.get(this._helpScreen).to({ alpha : 1},1000,createjs.Ease.sineOut);
-		createjs.Tween.get(this._closeHelp).wait(1000).to({ alpha : 1},500,createjs.Ease.sineOut);
-		createjs.Tween.get(this._helpBtn).to({ alpha : 0},1000,createjs.Ease.sineOut);
+		this._helpScreen.rewindPages();
+		createjs.Tween.get(this._helpScreen).to({ alpha : 1},400,createjs.Ease.sineOut);
+		createjs.Tween.get(this._helpBtn).to({ alpha : 0},200,createjs.Ease.sineOut);
 		this._helpScreen.visible = true;
 		this._helpBtn.onClick = null;
-		this._closeHelp.onClick = $bind(this,this.closeHelp);
 		this._levelsLayer.mouseEnabled = false;
 		this._menuRightBtn.visible = this._menuLeftBtn.visible = false;
 	}
@@ -2328,7 +2374,6 @@ co.doubleduck.Menu.prototype = $extend(co.doubleduck.BaseMenu.prototype,{
 	,_back: null
 	,_menuLeftBtn: null
 	,_menuRightBtn: null
-	,_closeHelp: null
 	,_helpScreen: null
 	,_helpBtn: null
 	,_muteBtn: null
@@ -2338,6 +2383,175 @@ co.doubleduck.Menu.prototype = $extend(co.doubleduck.BaseMenu.prototype,{
 	,_planets: null
 	,WORLD_MOVE_EASE: null
 	,__class__: co.doubleduck.Menu
+});
+co.doubleduck.PagedHelp = $hxClasses["co.doubleduck.PagedHelp"] = function(backUri,nextBtnUri,gotItBtnUri,pages) {
+	createjs.Container.call(this);
+	this._background = co.doubleduck.BaseAssets.getImage(backUri);
+	this.addChild(this._background);
+	this.regX = this._background.image.width / 2;
+	this.regY = this._background.image.height / 2;
+	this._contentLayer = new createjs.Container();
+	if(pages.length > 0) {
+		var _g1 = 0, _g = pages.length;
+		while(_g1 < _g) {
+			var i = _g1++;
+			this.addPage(pages[i],i);
+		}
+		this.addChild(this._contentLayer);
+		this._pagesCount = pages.length;
+		this._mask = new createjs.Shape();
+		this._mask.graphics.beginFill("#000000");
+		this._mask.graphics.drawRect(20,20,this._background.image.width - 40,this._background.image.height - 40);
+		this._mask.graphics.endFill();
+		this._contentLayer.mask = this._mask;
+	} else this._pagesCount = 0;
+	if(nextBtnUri != null && nextBtnUri != "") {
+		this._nextBtn = new co.doubleduck.Button(co.doubleduck.BaseAssets.getImage(nextBtnUri),true,co.doubleduck.Button.CLICK_TYPE_SCALE);
+		this._nextBtn.regX = this._nextBtn.image.width / 2;
+		this._nextBtn.regY = this._nextBtn.image.height / 2;
+		this._nextBtn.onClick = $bind(this,this.handleNextClick);
+		this.addChild(this._nextBtn);
+	}
+	this._gotItBtn = new co.doubleduck.Button(co.doubleduck.BaseAssets.getImage(gotItBtnUri),true,co.doubleduck.Button.CLICK_TYPE_SCALE);
+	this._gotItBtn.regX = this._gotItBtn.image.width / 2;
+	this._gotItBtn.regY = this._gotItBtn.image.height / 2;
+	this._gotItBtn.onClick = $bind(this,this.handleGotItClick);
+	this.addChild(this._gotItBtn);
+	this.setButtonsPos();
+	this._currPage = 0;
+	this.enableSwipe();
+	this.addPageMarkers();
+	this.setButtonsVis();
+};
+co.doubleduck.PagedHelp.__name__ = ["co","doubleduck","PagedHelp"];
+co.doubleduck.PagedHelp.__super__ = createjs.Container;
+co.doubleduck.PagedHelp.prototype = $extend(createjs.Container.prototype,{
+	createPageMarker: function() {
+		var img = co.doubleduck.BaseAssets.getRawImage("images/duckling/page_marker.png");
+		var initObject = { };
+		initObject.images = [img];
+		initObject.frames = { width : 16, height : 18};
+		initObject.animations = { };
+		initObject.animations.idle = { frames : 0, frequency : 20};
+		initObject.animations.active = { frames : 1, frequency : 20};
+		var pageMarker = new createjs.BitmapAnimation(new createjs.SpriteSheet(initObject));
+		pageMarker.gotoAndStop("idle");
+		return pageMarker;
+	}
+	,handleNextClick: function() {
+		this._currPage++;
+		if(this._currPage >= this._pagesCount) {
+			this._currPage = this._pagesCount - 1;
+			return;
+		}
+		this._pageMarkers[this._currPage - 1].gotoAndStop("idle");
+		this._pageMarkers[this._currPage].gotoAndStop("active");
+		createjs.Tween.get(this._contentLayer).to({ x : -1 * this._background.image.width * this._currPage},200,createjs.Ease.sineOut);
+		this.setButtonsVis();
+	}
+	,handlePrevClick: function() {
+		this._currPage--;
+		if(this._currPage < 0) {
+			this._currPage = 0;
+			return;
+		}
+		this._pageMarkers[this._currPage + 1].gotoAndStop("idle");
+		this._pageMarkers[this._currPage].gotoAndStop("active");
+		createjs.Tween.get(this._contentLayer).to({ x : -1 * this._background.image.width * this._currPage},200,createjs.Ease.sineOut);
+		this.setButtonsVis();
+	}
+	,setButtonsVis: function() {
+		if(this._pagesCount == 0) {
+			this._gotItBtn.visible = true;
+			return;
+		}
+		if(this._currPage == this._pagesCount - 1) {
+			this._gotItBtn.visible = true;
+			this._nextBtn.visible = false;
+		} else {
+			this._gotItBtn.visible = false;
+			this._nextBtn.visible = true;
+		}
+	}
+	,handleSwipe: function(event) {
+		if(event.direction == "left") this.handleNextClick(); else if(event.direction == "right") this.handlePrevClick();
+	}
+	,handleGotItClick: function() {
+		if(this.onGotIt != null) this.onGotIt();
+	}
+	,addPageMarkers: function() {
+		if(this._pagesCount == 0) return;
+		this._pageMarkers = new Array();
+		var totalWidth = 0;
+		this._markersLayer = new createjs.Container();
+		var _g1 = 0, _g = this._pagesCount;
+		while(_g1 < _g) {
+			var currPage = _g1++;
+			var pageMarker = this.createPageMarker();
+			this._pageMarkers.push(pageMarker);
+			if(currPage != 0) {
+				pageMarker.x = this._pageMarkers[currPage - 1].x + this._pageMarkers[currPage - 1].spriteSheet._frameWidth + 5;
+				totalWidth += 5;
+			}
+			totalWidth += pageMarker.spriteSheet._frameWidth;
+			this._markersLayer.addChild(pageMarker);
+		}
+		this._markersLayer.y = this._background.image.height * 0.80;
+		this._markersLayer.x = this._background.image.width / 2;
+		this._markersLayer.regX = totalWidth / 2;
+		this.addChild(this._markersLayer);
+		this._pageMarkers[0].gotoAndStop("active");
+	}
+	,addPage: function(pageUri,index) {
+		var page = co.doubleduck.BaseAssets.getImage(pageUri);
+		page.x += this._background.image.width * index;
+		this._contentLayer.addChild(page);
+	}
+	,goToPage: function(page) {
+		this._pageMarkers[this._currPage].gotoAndStop("idle");
+		this._currPage = page;
+		this._pageMarkers[this._currPage].gotoAndStop("active");
+		this._contentLayer.x = -1 * this._background.image.width * this._currPage;
+		this.setButtonsVis();
+	}
+	,changeContentMask: function(topPad,bottomPad,leftPad,rightPad) {
+		this._mask.graphics.clear();
+		this._mask.graphics.beginFill("#000000");
+		this._mask.graphics.drawRect(leftPad,topPad,this._background.image.width - (rightPad + leftPad),this._background.image.height - (bottomPad + topPad));
+		this._mask.graphics.endFill();
+	}
+	,rewindPages: function() {
+		this.goToPage(0);
+	}
+	,enableSwipe: function() {
+		co.doubleduck.BaseGame.hammer.onswipe = $bind(this,this.handleSwipe);
+	}
+	,setMarkersPos: function(percentY,percentX) {
+		if(percentX == null) percentX = 0.5;
+		this._markersLayer.y = this._background.image.height * percentY;
+		this._markersLayer.x = this._background.image.width * percentX;
+	}
+	,setButtonsPos: function(percentX,percentY) {
+		if(percentY == null) percentY = 0.5;
+		if(percentX == null) percentX = 0.5;
+		if(this._nextBtn != null) {
+			this._nextBtn.x = this._background.image.width * percentX;
+			this._nextBtn.y = this._background.image.height * percentY;
+		}
+		this._gotItBtn.x = this._background.image.width * percentX;
+		this._gotItBtn.y = this._background.image.height * percentY;
+	}
+	,_currPage: null
+	,_pagesCount: null
+	,_gotItBtn: null
+	,_nextBtn: null
+	,_pageMarkers: null
+	,_markersLayer: null
+	,_mask: null
+	,_contentLayer: null
+	,_background: null
+	,onGotIt: null
+	,__class__: co.doubleduck.PagedHelp
 });
 co.doubleduck.Persistence = $hxClasses["co.doubleduck.Persistence"] = function() { }
 co.doubleduck.Persistence.__name__ = ["co","doubleduck","Persistence"];
@@ -3204,9 +3418,11 @@ co.doubleduck.SoundManager.isSoundAvailable = function() {
 		return true;
 	}
 	co.doubleduck.SoundManager.engineType = co.doubleduck.SoundType.NONE;
+	co.doubleduck.BasePersistence.initVar("mute");
 	return false;
 }
-co.doubleduck.SoundManager.mute = function() {
+co.doubleduck.SoundManager.mute = function(persisted) {
+	if(persisted == null) persisted = true;
 	if(!co.doubleduck.SoundManager.available) return;
 	co.doubleduck.SoundManager._muted = true;
 	var _g1 = 0, _g = Reflect.fields(co.doubleduck.SoundManager._cache).length;
@@ -3215,18 +3431,23 @@ co.doubleduck.SoundManager.mute = function() {
 		var mySound = Reflect.getProperty(co.doubleduck.SoundManager._cache,Reflect.fields(co.doubleduck.SoundManager._cache)[currSound]);
 		if(mySound != null) mySound.setVolume(0);
 	}
-	co.doubleduck.SoundManager.setPersistedMute(co.doubleduck.SoundManager._muted);
+	if(persisted) co.doubleduck.SoundManager.setPersistedMute(co.doubleduck.SoundManager._muted);
 }
-co.doubleduck.SoundManager.unmute = function() {
+co.doubleduck.SoundManager.unmute = function(persisted) {
+	if(persisted == null) persisted = true;
 	if(!co.doubleduck.SoundManager.available) return;
 	co.doubleduck.SoundManager._muted = false;
-	var _g1 = 0, _g = Reflect.fields(co.doubleduck.SoundManager._cache).length;
-	while(_g1 < _g) {
-		var currSound = _g1++;
-		var mySound = Reflect.getProperty(co.doubleduck.SoundManager._cache,Reflect.fields(co.doubleduck.SoundManager._cache)[currSound]);
-		if(mySound != null) mySound.setVolume(1);
+	try {
+		var _g1 = 0, _g = Reflect.fields(co.doubleduck.SoundManager._cache).length;
+		while(_g1 < _g) {
+			var currSound = _g1++;
+			var mySound = Reflect.getProperty(co.doubleduck.SoundManager._cache,Reflect.fields(co.doubleduck.SoundManager._cache)[currSound]);
+			if(mySound != null) mySound.setVolume(1);
+		}
+	} catch( e ) {
+		null;
 	}
-	co.doubleduck.SoundManager.setPersistedMute(co.doubleduck.SoundManager._muted);
+	if(persisted) co.doubleduck.SoundManager.setPersistedMute(co.doubleduck.SoundManager._muted);
 }
 co.doubleduck.SoundManager.toggleMute = function() {
 	if(co.doubleduck.SoundManager._muted) co.doubleduck.SoundManager.unmute(); else co.doubleduck.SoundManager.mute();
@@ -3287,6 +3508,71 @@ co.doubleduck.SoundManager.prototype = {
 }
 co.doubleduck.Utils = $hxClasses["co.doubleduck.Utils"] = function() { }
 co.doubleduck.Utils.__name__ = ["co","doubleduck","Utils"];
+co.doubleduck.Utils.dateDeltaInDays = function(day1,day2) {
+	var delta = Math.abs(day2.getTime() - day1.getTime());
+	return delta / 86400000;
+}
+co.doubleduck.Utils.getTodayDate = function() {
+	var newDate = new Date();
+	return HxOverrides.dateStr(newDate);
+}
+co.doubleduck.Utils.getHour = function() {
+	var newDate = new Date();
+	return newDate.getHours();
+}
+co.doubleduck.Utils.rectOverlap = function(r1,r2) {
+	var r1TopLeft = new createjs.Point(r1.x,r1.y);
+	var r1BottomRight = new createjs.Point(r1.x + r1.width,r1.y + r1.height);
+	var r1TopRight = new createjs.Point(r1.x + r1.width,r1.y);
+	var r1BottomLeft = new createjs.Point(r1.x,r1.y + r1.height);
+	var r2TopLeft = new createjs.Point(r2.x,r2.y);
+	var r2BottomRight = new createjs.Point(r2.x + r2.width,r2.y + r2.height);
+	var r2TopRight = new createjs.Point(r2.x + r2.width,r2.y);
+	var r2BottomLeft = new createjs.Point(r2.x,r2.y + r2.height);
+	if(co.doubleduck.Utils.rectContainPoint(r2TopLeft,r2BottomRight,r1TopLeft)) return true;
+	if(co.doubleduck.Utils.rectContainPoint(r2TopLeft,r2BottomRight,r1BottomRight)) return true;
+	if(co.doubleduck.Utils.rectContainPoint(r2TopLeft,r2BottomRight,r1TopRight)) return true;
+	if(co.doubleduck.Utils.rectContainPoint(r2TopLeft,r2BottomRight,r1BottomLeft)) return true;
+	if(co.doubleduck.Utils.rectContainPoint(r1TopLeft,r1BottomRight,r2TopLeft)) return true;
+	if(co.doubleduck.Utils.rectContainPoint(r1TopLeft,r1BottomRight,r2BottomRight)) return true;
+	if(co.doubleduck.Utils.rectContainPoint(r1TopLeft,r1BottomRight,r2TopRight)) return true;
+	if(co.doubleduck.Utils.rectContainPoint(r1TopLeft,r1BottomRight,r2BottomLeft)) return true;
+	return false;
+}
+co.doubleduck.Utils.overlap = function(obj1,obj1Width,obj1Height,obj2,obj2Width,obj2Height) {
+	var o1TopLeft = new createjs.Point(obj1.x - obj1.regX * co.doubleduck.BaseGame.getScale(),obj1.y - obj1.regY * co.doubleduck.BaseGame.getScale());
+	var o1BottomRight = new createjs.Point(o1TopLeft.x - obj1.regX * co.doubleduck.BaseGame.getScale() + obj1Width * co.doubleduck.BaseGame.getScale(),o1TopLeft.y + obj1Height * co.doubleduck.BaseGame.getScale() - obj1.regY * co.doubleduck.BaseGame.getScale());
+	var o1TopRight = new createjs.Point(o1BottomRight.x - obj1.regX * co.doubleduck.BaseGame.getScale(),o1TopLeft.y - obj1.regY * co.doubleduck.BaseGame.getScale());
+	var o1BottomLeft = new createjs.Point(o1TopLeft.x - obj1.regX * co.doubleduck.BaseGame.getScale(),o1BottomRight.y - obj1.regY * co.doubleduck.BaseGame.getScale());
+	var o2TopLeft = new createjs.Point(obj2.x - obj2.regX * co.doubleduck.BaseGame.getScale(),obj2.y - obj2.regY * co.doubleduck.BaseGame.getScale());
+	var o2BottomRight = new createjs.Point(o2TopLeft.x + obj2Width * co.doubleduck.BaseGame.getScale() - obj2.regX * co.doubleduck.BaseGame.getScale(),o2TopLeft.y + obj2Height * co.doubleduck.BaseGame.getScale() - obj2.regY * co.doubleduck.BaseGame.getScale());
+	var o2TopRight = new createjs.Point(o2BottomRight.x - obj2.regX * co.doubleduck.BaseGame.getScale(),o2TopLeft.y - obj2.regY * co.doubleduck.BaseGame.getScale());
+	var o2BottomLeft = new createjs.Point(o2TopLeft.x - obj2.regX * co.doubleduck.BaseGame.getScale(),o2BottomRight.y - obj2.regY * co.doubleduck.BaseGame.getScale());
+	if(co.doubleduck.Utils.rectContainPoint(o2TopLeft,o2BottomRight,o1TopLeft)) return true;
+	if(co.doubleduck.Utils.rectContainPoint(o2TopLeft,o2BottomRight,o1BottomRight)) return true;
+	if(co.doubleduck.Utils.rectContainPoint(o2TopLeft,o2BottomRight,o1TopRight)) return true;
+	if(co.doubleduck.Utils.rectContainPoint(o2TopLeft,o2BottomRight,o1BottomLeft)) return true;
+	if(co.doubleduck.Utils.rectContainPoint(o1TopLeft,o1BottomRight,o2TopLeft)) return true;
+	if(co.doubleduck.Utils.rectContainPoint(o1TopLeft,o1BottomRight,o2BottomRight)) return true;
+	if(co.doubleduck.Utils.rectContainPoint(o1TopLeft,o1BottomRight,o2TopRight)) return true;
+	if(co.doubleduck.Utils.rectContainPoint(o1TopLeft,o1BottomRight,o2BottomLeft)) return true;
+	return false;
+}
+co.doubleduck.Utils.rectContainPoint = function(rectTopLeft,rectBottomRight,point) {
+	return point.x >= rectTopLeft.x && point.x <= rectBottomRight.x && point.y >= rectTopLeft.y && point.y <= rectBottomRight.y;
+}
+co.doubleduck.Utils.objectContains = function(dyn,memberName) {
+	return Reflect.hasField(dyn,memberName);
+}
+co.doubleduck.Utils.contains = function(arr,obj) {
+	var _g = 0;
+	while(_g < arr.length) {
+		var element = arr[_g];
+		++_g;
+		if(element == obj) return true;
+	}
+	return false;
+}
 co.doubleduck.Utils.isMobileFirefox = function() {
 	var isFirefox = /Firefox/.test(navigator.userAgent);
 	return isFirefox && viewporter.ACTIVE;
