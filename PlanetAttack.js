@@ -2074,13 +2074,24 @@ co.doubleduck.Game.prototype = $extend(co.doubleduck.BaseGame.prototype,{
 		this._session.onNextLevel = $bind(this,this.handleNextLevel);
 	}
 	,handleNextLevel: function() {
-		this._session.destroy();
-		co.doubleduck.BaseGame._stage.removeChild(this._session);
-		this._session = null;
-		var params = { };
-		params.levelId = co.doubleduck.Session.levelNumber + 1 | 0;
-		params.backOffset = 0;
-		this.startSession(params);
+	  var self = this;
+	  function nextLevel() {
+  		self._session.destroy();
+  		co.doubleduck.BaseGame._stage.removeChild(self._session);
+  		self._session = null;
+  		var params = { };
+  		params.levelId = co.doubleduck.Session.levelNumber + 1 | 0;
+  		params.backOffset = 0;
+  		self.startSession(params); 
+    }
+
+    if (window.InAppOffer) {
+      new window.InAppOffer({
+        "onRemove": nextLevel
+      });
+    } else {
+      nextLevel();
+    }
 	}
 	,handleRestart: function(properties) {
 		this._session.destroy();
